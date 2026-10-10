@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fitness Training Periodization Block Planner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <div class="max-w-5xl mx-auto px-4 py-8">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-green-400">Periodization Block Planner</h1>
+      <p class="text-gray-400 mt-1">Plan 8–16 week training cycles with Accumulation, Intensification, and Realisation blocks</p>
+    </header>
+
+    <!-- Setup Form -->
+    <section class="bg-gray-900 rounded-xl p-6 mb-6" aria-label="Cycle setup">
+      <h2 class="text-lg font-semibold text-gray-200 mb-4">Cycle Setup</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <label for="goal" class="block text-sm text-gray-400 mb-1">Goal / Sport</label>
+          <select id="goal"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            aria-label="Training goal">
+            <option value="strength">Strength</option>
+            <option value="hypertrophy">Hypertrophy</option>
+            <option value="endurance">Endurance</option>
+            <option value="general">General Fitness</option>
+          </select>
+        </div>
+        <div>
+          <label for="totalWeeks" class="block text-sm text-gray-400 mb-1">Total Weeks</label>
+          <select id="totalWeeks"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            aria-label="Total weeks">
+            <option value="8">8 weeks</option>
+            <option value="12" selected>12 weeks</option>
+            <option value="16">16 weeks</option>
+          </select>
+        </div>
+        <div>
+          <label for="peakWeek" class="block text-sm text-gray-400 mb-1">Peak Week</label>
+          <select id="peakWeek"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            aria-label="Peak week number">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div>
+          <label for="startDate" class="block text-sm text-gray-400 mb-1">Start Date</label>
+          <input id="startDate" type="date"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            aria-label="Cycle start date" />
+        </div>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-3">
+        <button id="generatePlan"
+          class="bg-green-600 hover:bg-green-500 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
+          aria-label="Generate training plan">
+          Generate Plan
+        </button>
+        <button id="exportCSV" disabled
+          class="bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium px-5 py-2.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+          aria-label="Export plan as CSV">
+          Export CSV
+        </button>
+      </div>
+    </section>
+
+    <!-- Block Legend -->
+    <div id="legend" class="hidden flex flex-wrap gap-3 mb-4">
+      <div class="flex items-center gap-2 text-sm">
+        <span class="w-4 h-4 rounded bg-green-800 inline-block"></span>
+        <span class="text-gray-400">Accumulation (high volume)</span>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <span class="w-4 h-4 rounded bg-yellow-800 inline-block"></span>
+        <span class="text-gray-400">Intensification (mod volume + intensity)</span>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <span class="w-4 h-4 rounded bg-red-900 inline-block"></span>
+        <span class="text-gray-400">Realisation / Peak (low volume + max intensity)</span>
+      </div>
+    </div>
+
+    <!-- Plan Table -->
+    <section id="planSection" class="hidden bg-gray-900 rounded-xl p-6" aria-label="Training plan table">
+      <h2 class="text-lg font-semibold text-gray-200 mb-4" id="planTitle">12-Week Strength Plan</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm" role="table" aria-label="Weekly training plan">
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-800">
+              <th class="pb-2 pr-3">Week</th>
+              <th class="pb-2 pr-3">Date</th>
+              <th class="pb-2 pr-3">Block</th>
+              <th class="pb-2 pr-3">Volume %</th>
+              <th class="pb-2 pr-3">Intensity %</th>
+              <th class="pb-2 pr-3">Sessions/wk</th>
+              <th class="pb-2">Notes</th>
+            </tr>
+          </thead>
+          <tbody id="planTableBody" aria-live="polite"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      const STORAGE_KEY = 'periodization_plan_v1';
+
+      const BLOCK_STYLES = {
+        accumulation: { bg: 'bg-green-900', border: 'border-green-700', label: 'Accumulation', textColor: 'text-green-300' },
+        intensification: { bg: 'bg-yellow-900', border: 'border-yellow-700', label: 'Intensification', textColor: 'text-yellow-300' },
+        realisation: { bg: 'bg-red-900', border: 'border-red-700', label: 'Realisation', textColor: 'text-red-300' },
+      };
+
+      // Goal-specific base volumes & intensities per block
+      const GOAL_PARAMS = {
+        strength: {
+          accumulation:    { volBase: 75, intBase: 70, sessions: 4 },
+          intensification: { volBase: 60, intBase: 82, sessions: 4 },
+          realisation:     { volBase: 40, intBase: 92, sessions: 3 },
+        },
+        hypertrophy: {
+          accumulation:    { volBase: 90, intBase: 65, sessions: 5 },
+          intensification: { volBase: 72, intBase: 75, sessions: 5 },
+          realisation:     { volBase: 55, intBase: 85, sessions: 4 },
+        },
+        endurance: {
+          accumulation:    { volBase: 85, intBase: 62, sessions: 6 },
+          intensification: { volBase: 70, intBase: 74, sessions: 6 },
+          realisation:     { volBase: 50, intBase: 88, sessions: 5 },
+        },
+        general: {
+          accumulation:    { volBase: 80, intBase: 65, sessions: 4 },
+          intensification: { volBase: 65, intBase: 78, sessions: 4 },
+          realisation:     { volBase: 45, intBase: 88, sessions: 3 },
+        },
+      };
+
+      let planData = null;
+      let weekNotes = {};
+
+      const goalEl = document.getElementById('goal');
+      const totalWeeksEl = document.getElementById('totalWeeks');
+      const peakWeekEl = document.getElementById('peakWeek');
+      const startDateEl = document.getElementById('startDate');
+      const generateBtn = document.getElementById('generatePlan');
+      const exportBtn = document.getElementById('exportCSV');
+      const planSection = document.getElementById('planSection');
+      const planTitle = document.getElementById('planTitle');
+      const planTableBody = document.getElementById('planTableBody');
+      const legend = document.getElementById('legend');
+
+      startDateEl.value = new Date().toISOString().slice(0, 10);
+
+      function populatePeakWeek() {
+        const total = parseInt(totalWeeksEl.value, 10);
+        peakWeekEl.innerHTML = '';
+        for (let w = 1; w <= total; w++) {
+          const opt = document.createElement('option');
+          opt.value = w;
+          opt.textContent = 'Week ' + w;
+          if (w === total) opt.selected = true;
+          peakWeekEl.appendChild(opt);
+        }
+      }
+
+      function loadState() {
+        try {
+          const s = localStorage.getItem(STORAGE_KEY);
+          if (s) {
+            const d = JSON.parse(s);
+            if (d.goal) goalEl.value = d.goal;
+            if (d.totalWeeks) totalWeeksEl.value = d.totalWeeks;
+            if (d.startDate) startDateEl.value = d.startDate;
+            weekNotes = d.weekNotes || {};
+            populatePeakWeek();
+            if (d.peakWeek) peakWeekEl.value = d.peakWeek;
+            if (d.plan) {
+              planData = d.plan;
+              renderPlan();
+            }
+          }
+        } catch (e) {}
+      }
+
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            goal: goalEl.value,
+            totalWeeks: totalWeeksEl.value,
+            startDate: startDateEl.value,
+            peakWeek: peakWeekEl.value,
+            weekNotes,
+            plan: planData,
+          }));
+        } catch (e) {}
+      }
+
+      function assignBlock(week, total, peakWeek) {
+        // Realisation = last 2 weeks up to and including peak
+        const realEnd = peakWeek;
+        const realStart = Math.max(1, peakWeek - 1);
+        if (week >= realStart && week <= realEnd) return 'realisation';
+        // Intensification = middle third (roughly)
+        const acumEnd = Math.ceil(total * 0.5);
+        if (week <= acumEnd) return 'accumulation';
+        return 'intensification';
+      }
+
+      function blockVariance(week, blockStart, blockLen, type) {
+        const progress = blockLen > 1 ? (week - blockStart) / (blockLen - 1) : 0;
+        if (type === 'accumulation') {
+          return { vol: Math.round(progress * 10), int: Math.round(progress * 5) };
+        } else if (type === 'intensification') {
+          return { vol: Math.round(-progress * 10), int: Math.round(progress * 10) };
+        } else {
+          return { vol: 0, int: Math.round(progress * 5) };
+        }
+      }
+
+      function generatePlan() {
+        const goal = goalEl.value;
+        const total = parseInt(totalWeeksEl.value, 10);
+        const peakWeek = parseInt(peakWeekEl.value, 10);
+        const startDate = startDateEl.value ? new Date(startDateEl.value) : new Date();
+        const params = GOAL_PARAMS[goal];
+
+        planData = [];
+
+        // Calculate block boundaries
+        const blocks = Array.from({ length: total }, (_, i) => assignBlock(i + 1, total, peakWeek));
+
+        // Compute block start/length per block type for variance
+        const blockBounds = {};
+        blocks.forEach((type, i) => {
+          const w = i + 1;
+          if (!blockBounds[type]) blockBounds[type] = { start: w, end: w };
+          else blockBounds[type].end = w;
+        });
+
+        for (let w = 1; w <= total; w++) {
+          const block = blocks[w - 1];
+          const p = params[block];
+          const bb = blockBounds[block];
+          const bLen = bb.end - bb.start + 1;
+          const variance = blockVariance(w, bb.start, bLen, block);
+          const vol = Math.min(100, Math.max(30, p.volBase + variance.vol));
+          const int = Math.min(100, Math.max(50, p.intBase + variance.int));
+
+          const weekDate = new Date(startDate);
+          weekDate.setDate(weekDate.getDate() + (w - 1) * 7);
+
+          planData.push({
+            week: w,
+            date: weekDate.toISOString().slice(0, 10),
+            block,
+            vol,
+            int,
+            sessions: p.sessions,
+          });
+        }
+
+        saveState();
+        renderPlan();
+      }
+
+      function renderPlan() {
+        if (!planData) return;
+
+        const goalLabel = { strength: 'Strength', hypertrophy: 'Hypertrophy', endurance: 'Endurance', general: 'General Fitness' };
+        planTitle.textContent = `${planData.length}-Week ${goalLabel[goalEl.value] || ''} Plan`;
+
+        planSection.classList.remove('hidden');
+        legend.classList.remove('hidden');
+        exportBtn.disabled = false;
+
+        planTableBody.innerHTML = '';
+        planData.forEach(row => {
+          const style = BLOCK_STYLES[row.block];
+          const tr = document.createElement('tr');
+          tr.className = `border-b border-gray-800 ${style.bg} bg-opacity-30`;
+
+          const cells = [
+            { text: 'Week ' + row.week, cls: 'font-semibold' },
+            { text: row.date, cls: 'text-gray-400 text-xs' },
+            { text: style.label, cls: `${style.textColor} font-medium` },
+            { text: row.vol + '%', cls: 'text-blue-300 font-mono' },
+            { text: row.int + '%', cls: 'text-orange-300 font-mono' },
+            { text: row.sessions + 'x / week', cls: 'text-gray-400' },
+          ];
+
+          cells.forEach(({ text, cls }) => {
+            const td = document.createElement('td');
+            td.className = `py-2 pr-3 text-sm ${cls}`;
+            td.textContent = text;
+            tr.appendChild(td);
+          });
+
+          // Notes cell
+          const tdNote = document.createElement('td');
+          tdNote.className = 'py-1';
+          const noteInput = document.createElement('input');
+          noteInput.type = 'text';
+          noteInput.className = 'w-full bg-transparent border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-green-500 placeholder-gray-600';
+          noteInput.placeholder = 'Add note…';
+          noteInput.setAttribute('aria-label', 'Note for week ' + row.week);
+          noteInput.value = weekNotes[row.week] || '';
+          noteInput.addEventListener('input', () => {
+            weekNotes[row.week] = noteInput.value;
+            saveState();
+          });
+          tdNote.appendChild(noteInput);
+          tr.appendChild(tdNote);
+
+          planTableBody.appendChild(tr);
+        });
+      }
+
+      function exportCSV() {
+        if (!planData) return;
+        const goal = goalEl.value;
+        const rows = [['Week', 'Date', 'Block', 'Volume %', 'Intensity %', 'Sessions/wk', 'Notes']];
+        planData.forEach(row => {
+          rows.push([
+            row.week,
+            row.date,
+            BLOCK_STYLES[row.block].label,
+            row.vol,
+            row.int,
+            row.sessions,
+            (weekNotes[row.week] || '').replace(/,/g, ';'),
+          ]);
+        });
+        const csv = rows.map(r => r.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `periodization-${goal}-${planData.length}wk.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      totalWeeksEl.addEventListener('change', () => {
+        populatePeakWeek();
+        saveState();
+      });
+      generateBtn.addEventListener('click', generatePlan);
+      exportBtn.addEventListener('click', exportCSV);
+      [goalEl, peakWeekEl, startDateEl].forEach(el => el.addEventListener('change', saveState));
+
+      populatePeakWeek();
+      loadState();
+    })();
+  </script>
+</body>
+</html>
